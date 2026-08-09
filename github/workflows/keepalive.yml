@@ -1,0 +1,21 @@
+# نبضة تمنع توقّف مشروع Supabase بعد سبعة أيام بلا استخدام.
+# تُضبط القيمتان من: مستودع GitHub ← Settings ← Secrets and variables ← Actions
+#   SUPABASE_URL   = https://YOUR-PROJECT-REF.supabase.co
+#   SUPABASE_KEY   = المفتاح المنشور (publishable)
+name: keepalive
+on:
+  schedule:
+    - cron: '0 6 */3 * *'      # كل ثلاثة أيام
+  workflow_dispatch:
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: نبضة إلى قاعدة البيانات
+        run: |
+          code=$(curl -s -o /dev/null -w "%{http_code}" \
+            "${{ secrets.SUPABASE_URL }}/rest/v1/profiles?select=id&limit=1" \
+            -H "apikey: ${{ secrets.SUPABASE_KEY }}" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_KEY }}")
+          echo "استجابة: $code"
+          if [ "$code" -ge 500 ]; then exit 1; fi
