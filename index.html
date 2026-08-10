@@ -4,7 +4,7 @@
 <meta name="robots" content="noindex,nofollow,noarchive,nosnippet,noimageindex">
 <meta name="googlebot" content="noindex,nofollow">
 <meta name="referrer" content="no-referrer">
-<title>أدوات المشروع — دخول</title>
+<title>أداة تحليل ملفات المورّد — دخول</title>
 <style>
 :root{--bg:#f4f6f9;--card:#fff;--ink:#1A2B3C;--mut:#6b7a89;--line:#dde3ea;--nav:#1F3864;--acc:#2E75B6;--term:#eef3fb}
 *{box-sizing:border-box}
@@ -16,13 +16,15 @@ body{font-family:"Segoe UI",Tahoma,Arial,sans-serif;background:var(--bg);color:v
 .box h1{font-size:19px;color:var(--nav);margin:0 0 4px}
 .box .s{font-size:12.5px;color:var(--mut);margin-bottom:20px}
 label{display:block;font-size:12px;color:var(--mut);font-weight:600;margin:12px 0 5px}
-input{width:100%;font-family:inherit;font-size:14px;padding:10px 12px;border:1px solid var(--line);
+#gate input{font-family:inherit;font-size:14px;padding:10px 12px;border:1px solid var(--line);
       border-radius:8px;background:#fff;color:var(--ink)}
-input:focus{outline:none;border-color:var(--acc)}
-button{width:100%;margin-top:18px;background:var(--acc);color:#fff;border:0;border-radius:8px;
+#gate input:focus{outline:none;border-color:var(--acc)}
+/* الأنماط محصورة في شاشة الدخول حتى لا ترثها أزرار الأداة المحقونة */
+#gate button{width:100%;margin-top:18px;background:var(--acc);color:#fff;border:0;border-radius:8px;
        padding:11px;font-size:14.5px;cursor:pointer;font-family:inherit}
-button:hover{background:#245e91}
-button:disabled{opacity:.6;cursor:default}
+#gate button:hover{background:#245e91}
+#gate button:disabled{opacity:.6;cursor:default}
+#gate input{width:100%}
 .err{background:#FDECEA;color:#C62828;border-radius:8px;padding:9px 12px;font-size:12.5px;margin-top:14px;display:none}
 .err.on{display:block}
 .note{margin-top:18px;padding-top:14px;border-top:1px solid var(--line);font-size:11.5px;color:var(--mut);line-height:1.7}
@@ -43,32 +45,33 @@ button:disabled{opacity:.6;cursor:default}
 
 <div id="gate">
   <div class="box">
-    <h1>أدوات المشروع</h1>
+    <h1>أداة تحليل ملفات المورّد</h1>
     <div class="s">نظام داخلي — للأشخاص المرخَّصين فقط</div>
-    <label for="u">اسم المستخدم</label>
+    <form id="lf" onsubmit="return false"><label for="u">اسم المستخدم</label>
     <input id="u" autocomplete="username" placeholder="مثال: ahmed0303" autocapitalize="off" spellcheck="false">
     <label for="p">كلمة المرور</label>
     <input id="p" type="password" autocomplete="current-password">
-    <button id="go">دخول</button>
+    <button id="go" type="submit">دخول</button></form>
     <div class="err" id="err"></div>
     <div class="note">
-      قسم تكنولوجيا المعلومات — شركة البيئة.<br>
+      قسم تكنولوجيا المعلومات — شركة البيئة BICT.<br>
       تُسجَّل عمليات الدخول والاستخدام، وتُحفَظ نسخة من الملفات المرفوعة لأغراض الدعم التقني.<br>
-      المحتوى خاص ولا يُتداول خارج الجهات المرخَّصة.
+      المحتوى خاص ولا يُتداول خارج الجهات أو الشركات المرخَّصة.
     </div>
   </div>
 </div>
 
 <div id="bar">
-  <b id="who"></b><span class="tag" id="role"></span>
+  <b id="who"></b><span class="tag" id="role"></span><span class="tag" id="langBtn" onclick="toggleLang()" style="cursor:pointer">EN</span>
   <span class="sp"></span>
   <button onclick="openAdmin()" id="adminBtn" hidden>لوحة الإدارة</button>
+  <button onclick="newFile()" id="btnNew" hidden>↺ ملف آخر</button>
   <button onclick="signOut()">خروج</button>
 </div>
 
 <div id="load">جارٍ تحميل الأدوات…</div>
 <div id="app"></div>
-<div id="foot">نظام داخلي — قسم تكنولوجيا المعلومات، شركة البيئة · تُسجَّل عمليات الاستخدام · لا يُتداول المحتوى خارج الجهات المرخَّصة</div>
+<div id="foot">نظام داخلي — قسم تكنولوجيا المعلومات، شركة البيئة BICT · تُسجَّل عمليات الاستخدام وتُحفَظ نسخة من الملفات المرفوعة للدعم التقني · لا يُتداول المحتوى خارج الجهات أو الشركات المرخَّصة</div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script>
@@ -77,8 +80,8 @@ button:disabled{opacity:.6;cursor:default}
    المفتاح المنشور (publishable) آمن هنا؛ الحماية من قواعد RLS.
    لا تضع مفتاح secret في هذا الملف إطلاقاً.
    ══════════════════════════════════════════════════════════════ */
-const SUPABASE_URL  = "https://xnbadlijmhpkjusnvyay.supabase.co";
-const SUPABASE_KEY  = "sb_publishable_yNn47-FNUy1dAav2mfMhlA_9UBP6W1e";
+const SUPABASE_URL  = "https://YOUR-PROJECT-REF.supabase.co";
+const SUPABASE_KEY  = "sb_publishable_XXXXXXXXXXXXXXXXXXXX";
 const EMAIL_DOMAIN  = "tools.local";     /* اسم المستخدم يصير name@tools.local */
 
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
@@ -130,13 +133,16 @@ async function start(){
   $('foot').classList.add('on');
   $('load').classList.add('on');
   $('who').textContent = PROFILE.full_name || PROFILE.login_name;
-  const roles = { admin: 'مدير النظام', buyer: 'المشتريات', viewer: 'اطّلاع' };
+  const roles = { admin: 'مدير النظام', buyer: 'المشتريات — يرى الأسعار',
+                  viewer: 'عرض دون أسعار' };
   $('role').textContent = roles[PROFILE.role] || PROFILE.role;
   if (PROFILE.role === 'admin') $('adminBtn').hidden = false;
 
   window.__ROLE = PROFILE.role;
   window.__log = logAction;
   window.__archive = archiveFile;
+  window.__saveNote = saveNote;
+  window.__loadNotes = loadNotes;
 
   await logAction('login', { agent: navigator.userAgent.slice(0, 120) });
 
@@ -191,6 +197,36 @@ async function archiveFile(file){
   }catch(e){}
 }
 
+/* ── الملاحظات المشتركة على الأصناف ───────────────────────── */
+async function saveNote(rec){
+  if (!ME) return null;
+  try{
+    const row = {
+      article: rec.article, catalog: rec.catalog || '',
+      in_stock: rec.in_stock === undefined ? null : rec.in_stock,
+      checked_price: rec.checked_price ?? null,
+      note: rec.note ?? null,
+      user_id: ME.id
+    };
+    const { data, error } = await sb.from('item_notes')
+      .upsert(row, { onConflict: 'article,catalog' })
+      .select().single();
+    if (error){ console.warn('note', error.message); return null; }
+    logAction('note', { article: rec.article });
+    return data;
+  }catch(e){ return null; }
+}
+
+async function loadNotes(catalog){
+  if (!ME) return [];
+  try{
+    let q = sb.from('item_notes').select('*');
+    if (catalog) q = q.eq('catalog', catalog);
+    const { data } = await q;
+    return data || [];
+  }catch(e){ return []; }
+}
+
 /* ── لوحة الإدارة ─────────────────────────────────────────── */
 async function openAdmin(){
   const w = window.open('', '_blank');
@@ -233,6 +269,23 @@ async function openAdmin(){
       `<span class="mono">${esc(JSON.stringify(r.detail||{}))}</span>`]));
 
   w.document.body.innerHTML = html;
+}
+
+/* ── إعادة الرفع دون إعادة تسجيل الدخول ─────────────────── */
+function newFile(){
+  if (window.__reset) { window.__reset(); return; }
+  location.reload();
+}
+
+/* ── تبديل اللغة ─────────────────────────────────────────── */
+let LANG = 'ar';
+function toggleLang(){
+  LANG = LANG === 'ar' ? 'en' : 'ar';
+  document.documentElement.lang = LANG;
+  document.documentElement.dir = LANG === 'ar' ? 'rtl' : 'ltr';
+  document.getElementById('langBtn').textContent = LANG === 'ar' ? 'EN' : 'ع';
+  window.__LANG = LANG;
+  if (window.__relabel) window.__relabel(LANG);
 }
 
 /* استئناف جلسة قائمة */
