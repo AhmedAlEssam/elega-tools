@@ -36,6 +36,13 @@ label{display:block;font-size:12px;color:var(--mut);font-weight:600;margin:12px 
 #bar .tag{background:rgba(255,255,255,.14);border-radius:12px;padding:2px 10px;font-size:11.5px}
 #foot{padding:10px 18px;font-size:11px;color:var(--mut);border-top:1px solid var(--line);background:var(--card);display:none}
 #foot.on{display:block}
+@media (max-width:680px){
+  #bar{padding:8px 12px;gap:9px;font-size:12px}
+  #bar .tag{font-size:10.5px;padding:2px 8px}
+  #bar button{padding:4px 10px;font-size:11.5px}
+  .box{padding:22px}
+  #foot{padding:8px 12px;font-size:10px}
+}
 #app{display:none}
 #app.on{display:block}
 #load{display:none;text-align:center;padding:60px;color:var(--mut)}
@@ -228,64 +235,142 @@ async function loadNotes(catalog){
 }
 
 /* ── لوحة الإدارة ─────────────────────────────────────────── */
+let ADMW = null;
+
 async function openAdmin(){
-  const w = window.open('', '_blank');
-  w.document.write('<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="utf-8">' +
+  ADMW = window.open('', '_blank');
+  ADMW.document.write('<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="utf-8">' +
+    '<meta name="viewport" content="width=device-width,initial-scale=1">' +
     '<meta name="robots" content="noindex,nofollow"><title>لوحة الإدارة</title><style>' +
-    'body{font-family:"Segoe UI",Tahoma,Arial,sans-serif;color:#1A2B3C;padding:20px;font-size:13px;background:#f4f6f9}' +
-    'h2{color:#1F3864;font-size:17px;margin:18px 0 8px}' +
-    'table{width:100%;border-collapse:collapse;font-size:12px;background:#fff;margin-bottom:16px}' +
+    'body{font-family:"Segoe UI",Tahoma,Arial,sans-serif;color:#1A2B3C;padding:16px;font-size:13px;background:#f4f6f9;margin:0}' +
+    'h2{color:#1F3864;font-size:16px;margin:16px 0 7px}' +
+    'table{width:100%;border-collapse:collapse;font-size:12px;background:#fff;margin-bottom:14px}' +
     'th{background:#1F3864;color:#fff;padding:6px 9px;text-align:right;position:sticky;top:0}' +
-    'td{border-bottom:1px solid #dde3ea;padding:5px 9px}tr:nth-child(even) td{background:#fafcfe}' +
-    'a{color:#2E75B6}.mono{font-family:Consolas,monospace;font-size:11px}' +
-    '</style></head><body><h2>جارٍ التحميل…</h2></body></html>');
-  w.document.close();
-
-  const [act, files, log] = await Promise.all([
-    sb.from('admin_activity').select('*'),
-    sb.from('files').select('*').order('uploaded_at', { ascending: false }).limit(200),
-    sb.from('usage_log').select('*').order('at', { ascending: false }).limit(300)
-  ]);
-  const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-  const t = (title, head, rows) =>
-    `<h2>${title}</h2><table><thead><tr>${head.map(h=>`<th>${h}</th>`).join('')}</tr></thead><tbody>` +
-    rows.map(r=>`<tr>${r.map(c=>`<td>${c}</td>`).join('')}</tr>`).join('') + '</tbody></table>';
-  const dt = s => s ? new Date(s).toLocaleString('ar-IQ') : '—';
-
-  let html = t('المستخدمون والنشاط',
-    ['المستخدم','الاسم','القسم','الدور','مرّات الدخول','إجمالي الإجراءات','آخر ظهور'],
-    (act.data||[]).map(r=>[esc(r.login_name),esc(r.full_name),esc(r.department),esc(r.role),
-      r.logins||0, r.actions||0, dt(r.last_seen)]));
-
-  html += t('الملفّات المؤرشفة',
-    ['التاريخ','المستخدم','الملف','الحجم','المسار'],
-    (files.data||[]).map(r=>[dt(r.uploaded_at), esc((r.user_id||'').slice(0,8)),
-      esc(r.file_name), Math.round((r.size_bytes||0)/1024)+' KB',
-      `<span class="mono">${esc(r.storage_path)}</span>`]));
-
-  html += t('سجلّ الاستخدام',
-    ['الوقت','المستخدم','الإجراء','التفاصيل'],
-    (log.data||[]).map(r=>[dt(r.at), esc((r.user_id||'').slice(0,8)), esc(r.action),
-      `<span class="mono">${esc(JSON.stringify(r.detail||{}))}</span>`]));
-
-  w.document.body.innerHTML = html;
+    'td{border-bottom:1px solid #dde3ea;padding:5px 9px;vertical-align:middle}' +
+    'tr:nth-child(even) td{background:#fafcfe}' +
+    'select,input{font-family:inherit;font-size:12px;padding:3px 6px;border:1px solid #dde3ea;border-radius:5px}' +
+    'button{font-family:inherit;font-size:11.5px;padding:4px 10px;border:1px solid #dde3ea;border-radius:6px;' +
+    'background:#fff;cursor:pointer}button:hover{background:#eef3fb}' +
+    '.b{background:#2E75B6;color:#fff;border:0}.b:hover{background:#245e91}' +
+    '.tabs{display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap}' +
+    '.tabs button.on{background:#1F3864;color:#fff;border-color:#1F3864}' +
+    '.mono{font-family:Consolas,monospace;font-size:11px}.mut{color:#6b7a89}' +
+    '.ok{color:#2E7D32;font-weight:700}.no{color:#C62828}' +
+    '.card{background:#fff;border:1px solid #dde3ea;border-radius:10px;padding:14px;margin-bottom:14px}' +
+    '.note{background:#FFF6E5;border-inline-start:4px solid #EF6C00;border-radius:6px;padding:9px 12px;font-size:12px}' +
+    '@media(max-width:600px){table{font-size:11px}td,th{padding:4px 6px}}' +
+    '</style></head><body><div class="tabs">' +
+    '<button id="t1" class="on">المستخدمون</button><button id="t2">الاستخدام</button>' +
+    '<button id="t3">الملفّات</button><button id="t4">ملاحظات الأصناف</button>' +
+    '<button id="rf" class="b">↻ تحديث</button></div><div id="c">جارٍ التحميل…</div></body></html>');
+  ADMW.document.close();
+  ADMW.document.getElementById('rf').onclick = () => admLoad(ADMTAB);
+  ['t1','t2','t3','t4'].forEach((id,i) => {
+    ADMW.document.getElementById(id).onclick = () => { ADMTAB = i; admTabs(); admLoad(i); };
+  });
+  ADMTAB = 0; admLoad(0);
 }
-
-/* ── إعادة الرفع دون إعادة تسجيل الدخول ─────────────────── */
-function newFile(){
-  if (window.__reset) { window.__reset(); return; }
-  location.reload();
+let ADMTAB = 0;
+function admTabs(){
+  ['t1','t2','t3','t4'].forEach((id,i) =>
+    ADMW.document.getElementById(id).className = (i === ADMTAB ? 'on' : ''));
 }
+const aesc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const adt = s => s ? new Date(s).toLocaleString('ar-IQ') : '—';
 
-/* ── تبديل اللغة ─────────────────────────────────────────── */
-let LANG = 'ar';
-function toggleLang(){
-  LANG = LANG === 'ar' ? 'en' : 'ar';
-  document.documentElement.lang = LANG;
-  document.documentElement.dir = LANG === 'ar' ? 'rtl' : 'ltr';
-  document.getElementById('langBtn').textContent = LANG === 'ar' ? 'EN' : 'ع';
-  window.__LANG = LANG;
-  if (window.__relabel) window.__relabel(LANG);
+async function admLoad(tab){
+  if (!ADMW || ADMW.closed) return;
+  const box = ADMW.document.getElementById('c');
+  box.innerHTML = 'جارٍ التحميل…';
+
+  if (tab === 0){
+    const [{ data: profs }, { data: act }] = await Promise.all([
+      sb.from('profiles').select('*').order('login_name'),
+      sb.from('admin_activity').select('*')
+    ]);
+    const A = {}; (act||[]).forEach(r => A[r.login_name] = r);
+    box.innerHTML =
+      '<div class="note">إنشاء حساب جديد يتمّ من لوحة Supabase ← Authentication ← Users ← Add user، ' +
+      'بالبريد <span class="mono">اسم_المستخدم@tools.local</span> مع تأشير Auto Confirm. ' +
+      'ثم يظهر هنا فيُضبط دوره واسمه. (الإنشاء يحتاج مفتاحاً سرّياً لا يوضع في صفحة ويب.)</div>' +
+      '<table><thead><tr><th>المستخدم</th><th>الاسم</th><th>القسم</th><th>الدور</th>' +
+      '<th>نشط</th><th>دخول</th><th>إجراءات</th><th>آخر ظهور</th><th></th></tr></thead><tbody>' +
+      (profs||[]).map(p => {
+        const a = A[p.login_name] || {};
+        return `<tr data-id="${p.id}">
+          <td class="mono">${aesc(p.login_name)}</td>
+          <td><input class="fn" value="${aesc(p.full_name)}" size="14"></td>
+          <td><input class="dp" value="${aesc(p.department)}" size="12"></td>
+          <td><select class="rl">
+            <option value="admin"${p.role==='admin'?' selected':''}>مدير النظام</option>
+            <option value="buyer"${p.role==='buyer'?' selected':''}>المشتريات</option>
+            <option value="viewer"${p.role==='viewer'?' selected':''}>عرض دون أسعار</option>
+          </select></td>
+          <td><input type="checkbox" class="ac"${p.active?' checked':''}></td>
+          <td>${a.logins||0}</td><td>${a.actions||0}</td>
+          <td class="mut">${adt(a.last_seen)}</td>
+          <td><button class="b sv">حفظ</button></td></tr>`;
+      }).join('') + '</tbody></table>';
+    ADMW.document.querySelectorAll('.sv').forEach(b => {
+      b.onclick = async () => {
+        const tr = b.closest('tr');
+        const { error } = await sb.from('profiles').update({
+          full_name: tr.querySelector('.fn').value,
+          department: tr.querySelector('.dp').value,
+          role: tr.querySelector('.rl').value,
+          active: tr.querySelector('.ac').checked
+        }).eq('id', tr.dataset.id);
+        b.textContent = error ? 'تعذّر' : 'حُفظ ✓';
+        setTimeout(() => b.textContent = 'حفظ', 1400);
+      };
+    });
+
+  } else if (tab === 1){
+    const { data } = await sb.from('usage_log').select('*').order('at', { ascending:false }).limit(400);
+    const { data: profs } = await sb.from('profiles').select('id,login_name');
+    const P = {}; (profs||[]).forEach(p => P[p.id] = p.login_name);
+    box.innerHTML = '<table><thead><tr><th>الوقت</th><th>المستخدم</th><th>الإجراء</th>' +
+      '<th>التفاصيل</th><th>المتصفّح</th></tr></thead><tbody>' +
+      (data||[]).map(r => `<tr><td class="mut">${adt(r.at)}</td>
+        <td class="mono">${aesc(P[r.user_id]||'—')}</td><td>${aesc(r.action)}</td>
+        <td class="mono">${aesc(JSON.stringify(r.detail||{}).slice(0,90))}</td>
+        <td class="mut mono">${aesc((r.user_agent||'').slice(0,46))}</td></tr>`).join('') +
+      '</tbody></table>';
+
+  } else if (tab === 2){
+    const { data } = await sb.from('files').select('*').order('uploaded_at', { ascending:false }).limit(300);
+    const { data: profs } = await sb.from('profiles').select('id,login_name');
+    const P = {}; (profs||[]).forEach(p => P[p.id] = p.login_name);
+    box.innerHTML = '<table><thead><tr><th>التاريخ</th><th>المستخدم</th><th>الملفّ</th>' +
+      '<th>الحجم</th><th></th></tr></thead><tbody>' +
+      (data||[]).map(r => `<tr><td class="mut">${adt(r.uploaded_at)}</td>
+        <td class="mono">${aesc(P[r.user_id]||'—')}</td><td>${aesc(r.file_name)}</td>
+        <td>${Math.round((r.size_bytes||0)/1024)} KB</td>
+        <td><button class="dl" data-p="${aesc(r.storage_path)}">تنزيل</button></td></tr>`).join('') +
+      '</tbody></table>';
+    ADMW.document.querySelectorAll('.dl').forEach(b => {
+      b.onclick = async () => {
+        const { data, error } = await sb.storage.from('catalogs')
+          .createSignedUrl(b.dataset.p, 120);
+        if (error) { b.textContent = 'تعذّر'; return; }
+        ADMW.open(data.signedUrl, '_blank');
+      };
+    });
+
+  } else {
+    const { data } = await sb.from('item_notes').select('*')
+      .order('updated_at', { ascending:false }).limit(400);
+    box.innerHTML = '<table><thead><tr><th>الصنف</th><th>الملفّ</th><th>التوفّر</th>' +
+      '<th>السعر المدقَّق</th><th>ملاحظة</th><th>بواسطة</th><th>الوقت</th></tr></thead><tbody>' +
+      (data||[]).map(r => `<tr><td class="mono">${aesc(r.article)}</td>
+        <td class="mut">${aesc(r.catalog)}</td>
+        <td class="${r.in_stock===true?'ok':r.in_stock===false?'no':'mut'}">${
+          r.in_stock===true?'متوفّر':r.in_stock===false?'غير متوفّر':'—'}</td>
+        <td>${r.checked_price ?? '—'}</td><td>${aesc(r.note||'')}</td>
+        <td>${aesc(r.login_name||'')}</td><td class="mut">${adt(r.updated_at)}</td></tr>`).join('') +
+      '</tbody></table>';
+  }
+  admTabs();
 }
 
 /* استئناف جلسة قائمة */
