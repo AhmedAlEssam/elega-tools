@@ -33,7 +33,14 @@ label{display:block;font-size:12px;color:var(--mut);font-weight:600;margin:12px 
 #bar b{font-weight:600}
 #bar .sp{flex:1}
 #bar button{width:auto;margin:0;background:rgba(255,255,255,.12);padding:5px 12px;font-size:12.5px;border-radius:7px}
-#bar .tag{background:rgba(255,255,255,.14);border-radius:12px;padding:2px 10px;font-size:11.5px}
+#bar .tag{background:rgba(255,255,255,.14);border-radius:12px;padding:3px 11px;font-size:11.5px;cursor:pointer}
+#bar .tag:hover{background:rgba(255,255,255,.24)}
+#bar .me{display:flex;flex-direction:column;line-height:1.35}
+#bar .me b{font-size:13.5px}
+#bar .me span{font-size:10.5px;opacity:.72}
+#bar button{background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.22);color:#fff;
+  padding:6px 13px;font-size:12.5px;border-radius:8px;transition:background .15s}
+#bar button:hover{background:rgba(255,255,255,.22);border-color:rgba(255,255,255,.4)}
 #foot{padding:10px 18px;font-size:11px;color:var(--mut);border-top:1px solid var(--line);background:var(--card);display:none}
 #foot.on{display:block}
 @media (max-width:680px){
@@ -69,7 +76,8 @@ label{display:block;font-size:12px;color:var(--mut);font-weight:600;margin:12px 
 </div>
 
 <div id="bar">
-  <b id="who"></b><span class="tag" id="role"></span><span class="tag" id="langBtn" onclick="toggleLang()" style="cursor:pointer">EN</span>
+  <div class="me"><b id="who"></b><span id="role"></span></div>
+  <span class="tag" id="langBtn" onclick="toggleLang()">EN</span>
   <span class="sp"></span>
   <button onclick="openAdmin()" id="adminBtn" hidden>لوحة الإدارة</button>
   <button onclick="newFile()" id="btnNew" hidden>↺ ملف آخر</button>
@@ -140,9 +148,9 @@ async function start(){
   $('foot').classList.add('on');
   $('load').classList.add('on');
   $('who').textContent = PROFILE.full_name || PROFILE.login_name;
-  const roles = { admin: 'مدير النظام', buyer: 'المشتريات — يرى الأسعار',
-                  viewer: 'عرض دون أسعار' };
-  $('role').textContent = roles[PROFILE.role] || PROFILE.role;
+  const roles = { admin: 'مدير النظام', buyer: 'المشتريات', viewer: 'المبيعات' };
+  $('role').textContent = (roles[PROFILE.role] || PROFILE.role) +
+    (PROFILE.department ? ' · ' + PROFILE.department : '');
   if (PROFILE.role === 'admin') $('adminBtn').hidden = false;
 
   window.__ROLE = PROFILE.role;
@@ -150,6 +158,11 @@ async function start(){
   window.__archive = archiveFile;
   window.__saveNote = saveNote;
   window.__loadNotes = loadNotes;
+  window.__catalogs = listCatalogs;
+  window.__import = importProducts;
+  window.__search = searchProducts;
+  window.__facets = loadFacets;
+  window.__canImport = (PROFILE.role === 'admin' || PROFILE.role === 'buyer');
 
   await logAction('login', { agent: navigator.userAgent.slice(0, 120) });
 
@@ -160,6 +173,15 @@ async function start(){
   injectApp(html);
   $('load').classList.remove('on');
   $('app').classList.add('on');
+  /* لوحة المواسم تظهر فور الدخول، وحقول الاستيراد لمن يملك الصلاحية */
+  setTimeout(() => {
+    try{
+      if (window.initDB) window.initDB();
+      const im = document.getElementById('imrow');
+      if (im && !window.__canImport) im.style.display = 'none';
+      relabelDOM(document.body);
+    }catch(e){}
+  }, 120);
 }
 
 /* الحقن: الأنماط ثم البنية ثم تشغيل السكربتات */
@@ -371,6 +393,122 @@ async function admLoad(tab){
       '</tbody></table>';
   }
   admTabs();
+}
+
+/* ── قاعدة بيانات المنتجات: استيراد · بحث · مواسم ────────── */
+async function listCatalogs(){
+  const { data } = await sb.from('catalogs').select('*').order('uploaded_at', { ascending:false });
+  return data || [];
+}
+
+async function importProducts(meta, rows){
+  /* meta: {file_name, sheet_name, season, brand, division}
+     rows: [{article, barcode, style, name, color, color_code, sizes[], label,
+             category, gender, image_link, cost, price, currency, fabric, origin}] */
+  if (!ME) return { error: 'لا جلسة' };
+  const { data: cat, error: e1 } = await sb.from('catalogs').upsert({
+    file_name: meta.file_name, sheet_name: meta.sheet_name || '',
+    season: meta.season || '', brand: meta.brand || '', division: meta.division || '',
+    row_count: rows.length, uploaded_by: ME.id
+  }, { onConflict: 'file_name,sheet_name' }).select().single();
+  if (e1) return { error: e1.message };
+
+  const payload = rows.map(r => Object.assign({}, r, {
+    catalog_id: cat.id, season: meta.season || r.season || ''
+  }));
+  let done = 0;
+  for (let i = 0; i < payload.length; i += 400){
+    const chunk = payload.slice(i, i + 400);
+    const { error } = await sb.from('products')
+      .upsert(chunk, { onConflict: 'article,season' });
+    if (error) return { error: error.message, done };
+    done += chunk.length;
+    if (window.__importProgress) window.__importProgress(done, payload.length);
+  }
+  logAction('import', { file: meta.file_name, rows: done, season: meta.season });
+  return { done, catalog: cat };
+}
+
+async function searchProducts(opts){
+  const { data, error } = await sb.rpc('search_products', {
+    q: opts.q || null, p_label: opts.label || null, p_category: opts.category || null,
+    p_season: opts.season || null, p_size: opts.size || null, lim: opts.limit || 300
+  });
+  if (error){ console.warn('search', error.message); return []; }
+  return data || [];
+}
+
+async function loadFacets(){
+  const { data } = await sb.from('product_facets').select('*');
+  const out = { label: [], category: [], season: [], gender: [] };
+  (data || []).forEach(r => { if (out[r.kind]) out[r.kind].push([r.value, r.n]); });
+  Object.keys(out).forEach(k => out[k].sort((a,b) => b[1] - a[1]));
+  return out;
+}
+
+/* ── قاموس الواجهة والترجمة ──────────────────────────────── */
+const T = {
+ 'أداة تحليل ملفات المورّد':'Vendor Catalogue Tool','دخول':'Sign in','خروج':'Sign out',
+ 'اسم المستخدم':'Username','كلمة المرور':'Password','لوحة الإدارة':'Admin',
+ '↺ ملف آخر':'↺ New file','مدير النظام':'Administrator','المشتريات':'Procurement','المبيعات':'Sales',
+ 'رفع الملف':'Upload file','ربط الأعمدة':'Column mapping','الورقة':'Sheet','صفّ العناوين':'Header row',
+ 'صور مضمّنة':'Embedded images','الطبقة الأولى':'Layer 1','الطبقة الثانية':'Layer 2',
+ 'الطبقة الثالثة':'Layer 3','الطبقة الرابعة (اختياري)':'Layer 4 (optional)',
+ 'المتغيّر (رمز فريد لكل قطعة)':'Variant code','البطاقة (موديل + لون)':'Template',
+ 'الموديل':'Style','الكمية (اختياري)':'Quantity',
+ '🧬 شبكة التصنيف':'🧬 Category network','🖼️ تصفّح واختيار':'🖼️ Browse & select',
+ 'مصدر الصورة':'Image source','تلقائي — المضمّنة أولاً':'Auto — embedded first',
+ 'المضمّنة في الملف فقط':'Embedded only','الروابط (دقّة أعلى · يحتاج إنترنت)':'Links (high-res)',
+ 'مجلّد الصور فقط':'Folder only','دقّة صور الروابط':'Link image size','كما هي':'As-is',
+ 'مجلّد الصور':'Image folder','تصفية':'Filter','بحث':'Search','التوفّر':'Availability',
+ 'الكل':'All','المتوفّر فقط':'In stock only','غير المتوفّر فقط':'Out of stock only',
+ '☑ تحديد المعروض':'☑ Select shown','☐ إلغاء التحديد':'☐ Clear selection',
+ '⬇ تصدير المختار':'⬇ Export selection','تسمية ملفات الصور':'Image file naming',
+ 'رمز البطاقة':'Template code','المختار فقط':'Selected only',
+ '🖼️ تصدير الصور (ZIP)':'🖼️ Export images (ZIP)','عرض المزيد':'Show more',
+ '⤢ ملء العرض':'⤢ Fit width','⬇ الشجرة CSV':'⬇ Tree CSV','⬇ الرسم SVG':'⬇ Chart SVG','🖨️ طباعة':'🖨️ Print',
+ '▥ ارتفاع بالحجم':'▥ Height by volume','▤ ارتفاع موحّد':'▤ Uniform height',
+ '≋ روابط بالحجم':'≋ Links by volume','╱ روابط موحّدة':'╱ Uniform links',
+ 'بلا صورة':'No image','غير متوفّر':'Out of stock','متوفّر':'In stock','التوفّر؟':'Stock?',
+ 'السعر المدقَّق':'Checked price','ملاحظة…':'Note…','المستخدمون':'Users','الاستخدام':'Usage',
+ 'الملفّات':'Files','ملاحظات الأصناف':'Item notes','↻ تحديث':'↻ Refresh',
+ 'المواسم المرفوعة':'Uploaded seasons','بحث في كل المواسم':'Search all seasons',
+ 'استيراد إلى قاعدة البيانات':'Import to database','الموسم':'Season',
+ 'اسم أو رمز…':'Name or code…','نظام داخلي — للأشخاص المرخَّصين فقط':'Internal system — authorised users only'
+};
+function tr(x){ return (window.__LANG === 'en' && T[x]) ? T[x] : x; }
+window.__tr = tr;
+
+function relabelDOM(root){
+  const walk = el => {
+    [...el.childNodes].forEach(n => {
+      if (n.nodeType === 3){
+        const t = n.nodeValue.trim();
+        if (!t) return;
+        if (n.__ar === undefined && T[t] === undefined) return;
+        if (n.__ar === undefined) n.__ar = t;
+        n.nodeValue = n.nodeValue.replace(n.nodeValue.trim(),
+          window.__LANG === 'en' ? (T[n.__ar] || n.__ar) : n.__ar);
+      } else if (n.nodeType === 1 && !/^(script|style)$/i.test(n.tagName)) walk(n);
+    });
+    if (el.placeholder !== undefined && el.placeholder){
+      if (el.__ph === undefined){ if (T[el.placeholder] === undefined) return; el.__ph = el.placeholder; }
+      el.placeholder = window.__LANG === 'en' ? (T[el.__ph] || el.__ph) : el.__ph;
+    }
+  };
+  walk(root || document.body);
+}
+
+let LANG = 'ar';
+window.__LANG = 'ar';
+function toggleLang(){
+  LANG = LANG === 'ar' ? 'en' : 'ar';
+  window.__LANG = LANG;
+  document.documentElement.lang = LANG;
+  document.documentElement.dir = LANG === 'ar' ? 'rtl' : 'ltr';
+  document.getElementById('langBtn').textContent = LANG === 'ar' ? 'EN' : 'ع';
+  relabelDOM(document.body);
+  if (window.__relabel) window.__relabel(LANG);
 }
 
 /* استئناف جلسة قائمة */
