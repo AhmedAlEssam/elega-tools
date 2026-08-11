@@ -159,6 +159,8 @@ async function start(){
   window.__saveNote = saveNote;
   window.__loadNotes = loadNotes;
   window.__catalogs = listCatalogs;
+  window.__files = listFiles;
+  window.__setSeason = setSeason;
   window.__import = importProducts;
   window.__search = searchProducts;
   window.__facets = loadFacets;
@@ -396,6 +398,32 @@ async function admLoad(tab){
 }
 
 /* ── قاعدة بيانات المنتجات: استيراد · بحث · مواسم ────────── */
+async function listFiles(){
+  const { data } = await sb.from('files').select('file_name,uploaded_at')
+    .order('uploaded_at', { ascending:false }).limit(300);
+  return data || [];
+}
+
+async function setSeason(fileName, season){
+  if (!ME) return false;
+  try{
+    /* الملفّ قد يكون مرفوعاً بلا استيراد — فيُنشأ له سجلّ موسم على أي حال */
+    const { data: ex } = await sb.from('catalogs').select('id')
+      .eq('file_name', fileName).limit(1);
+    if (ex && ex.length){
+      const { error } = await sb.from('catalogs').update({ season }).eq('id', ex[0].id);
+      if (error) return false;
+      await sb.from('products').update({ season }).eq('catalog_id', ex[0].id);
+    } else {
+      const { error } = await sb.from('catalogs')
+        .insert({ file_name: fileName, season, uploaded_by: ME.id });
+      if (error) return false;
+    }
+    logAction('season', { file: fileName, season });
+    return true;
+  }catch(e){ return false; }
+}
+
 async function listCatalogs(){
   const { data } = await sb.from('catalogs').select('*').order('uploaded_at', { ascending:false });
   return data || [];
