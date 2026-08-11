@@ -161,6 +161,9 @@ async function start(){
   window.__catalogs = listCatalogs;
   window.__files = listFiles;
   window.__loadSeason = loadSeason;
+  window.__loadCatalog = loadCatalog;
+  window.__delCatalog = deleteCatalog;
+  window.__uploadImage = uploadImage;
   window.__setSeason = setSeason;
   window.__getSetting = getSetting;
   window.__setSetting = setSetting;
@@ -438,10 +441,15 @@ async function listFiles(){
 async function loadSeason(season){
   /* المشتريات والإدارة يقرأون الجدول بأسعاره · المبيعات عبر دالّة بلا أسعار */
   if (window.__ROLE === 'admin' || window.__ROLE === 'buyer'){
-    const { data, error } = await sb.from('products').select('*')
-      .eq('season', season).order('label').limit(5000);
-    if (!error) return data || [];
-    console.warn('season', error.message);
+    const out = [];
+    for (let from = 0; from < 20000; from += 1000){
+      const { data, error } = await sb.from('products').select('*')
+        .eq('season', season).order('id').range(from, from + 999);
+      if (error){ console.warn('season', error.message); break; }
+      out.push(...(data || []));
+      if (!data || data.length < 1000) break;
+    }
+    if (out.length) return out;
   }
   const { data, error } = await sb.rpc('list_products', { p_season: season });
   if (error){ console.warn('season rpc', error.message); return []; }
@@ -466,6 +474,46 @@ async function setSeason(fileName, season){
     logAction('season', { file: fileName, season });
     return true;
   }catch(e){ return false; }
+}
+
+/* ── رفع صورة مضمَّنة إلى حاوية الصور ─────────────────────
+   ملفّات كثيرة تحمل صورها داخلها بلا عمود روابط، فلا يبقى منها شيء
+   في القاعدة. تُرفع هنا مرّة ويُخزَّن رابطها الثابت مع الصنف. */
+async function uploadImage(article, blob){
+  if (!ME || !blob) return null;
+  const ext = (blob.type && blob.type.includes('png')) ? 'png' : 'jpg';
+  const path = `${String(article).replace(/[^\w.\-]/g,'_')}.${ext}`;
+  try{
+    const { error } = await sb.storage.from('productimg')
+      .upload(path, blob, { upsert: true, contentType: blob.type || 'image/jpeg' });
+    if (error && !/exists/i.test(error.message)) return null;
+    const { data } = sb.storage.from('productimg').getPublicUrl(path);
+    return data ? data.publicUrl : null;
+  }catch(e){ return null; }
+}
+
+async function loadCatalog(catalogId){
+  if (window.__ROLE === 'admin' || window.__ROLE === 'buyer'){
+    const out = [];
+    for (let from = 0; from < 20000; from += 1000){
+      const { data, error } = await sb.from('products').select('*')
+        .eq('catalog_id', catalogId).order('id').range(from, from + 999);
+      if (error){ console.warn('catalog', error.message); break; }
+      out.push(...(data || []));
+      if (!data || data.length < 1000) break;
+    }
+    return out;
+  }
+  const { data, error } = await sb.rpc('list_catalog', { p_catalog: catalogId });
+  if (error){ console.warn('catalog rpc', error.message); return []; }
+  return data || [];
+}
+
+async function deleteCatalog(catalogId){
+  const { data, error } = await sb.rpc('delete_catalog', { p_catalog: catalogId });
+  if (error){ console.warn('del', error.message); return -1; }
+  logAction('delete_catalog', { catalog: catalogId });
+  return data;
 }
 
 async function listCatalogs(){
