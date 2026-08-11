@@ -250,7 +250,7 @@ async function saveNote(rec){
   try{
     const row = {
       article: rec.article,
-      catalog: rec.catalog || '',
+      catalog: '',
       in_stock: rec.in_stock === undefined ? null : rec.in_stock,
       qty: rec.qty ?? null,
       checked_price: rec.checked_price ?? null,
@@ -269,9 +269,8 @@ async function saveNote(rec){
 async function loadNotes(catalog){
   if (!ME) return [];
   try{
-    let q = sb.from('item_notes').select('*');
-    if (catalog) q = q.eq('catalog', catalog);
-    const { data } = await q;
+    const { data, error } = await sb.from('item_notes').select('*').limit(5000);
+    if (error) console.warn('notes', error.message);
     return data || [];
   }catch(e){ return []; }
 }
@@ -457,63 +456,24 @@ async function loadSeason(season){
 }
 
 async function setSeason(fileName, season){
-  if (!ME) return false;
+  if (!ME) return { ok:false, err:'لا جلسة' };
   try{
-    /* الملفّ قد يكون مرفوعاً بلا استيراد — فيُنشأ له سجلّ موسم على أي حال */
-    const { data: ex } = await sb.from('catalogs').select('id')
+    const { data: ex, error: e0 } = await sb.from('catalogs').select('id')
       .eq('file_name', fileName).limit(1);
+    if (e0) return { ok:false, err:e0.message };
     if (ex && ex.length){
       const { error } = await sb.from('catalogs').update({ season }).eq('id', ex[0].id);
-      if (error) return false;
-      await sb.from('products').update({ season }).eq('catalog_id', ex[0].id);
+      if (error) return { ok:false, err:error.message };
+      const { error: e2 } = await sb.from('products').update({ season }).eq('catalog_id', ex[0].id);
+      if (e2) return { ok:false, err:e2.message };
     } else {
       const { error } = await sb.from('catalogs')
-        .insert({ file_name: fileName, season, uploaded_by: ME.id });
-      if (error) return false;
+        .insert({ file_name: fileName, sheet_name: '', season, uploaded_by: ME.id });
+      if (error) return { ok:false, err:error.message };
     }
     logAction('season', { file: fileName, season });
-    return true;
-  }catch(e){ return false; }
-}
-
-/* ── رفع صورة مضمَّنة إلى حاوية الصور ─────────────────────
-   ملفّات كثيرة تحمل صورها داخلها بلا عمود روابط، فلا يبقى منها شيء
-   في القاعدة. تُرفع هنا مرّة ويُخزَّن رابطها الثابت مع الصنف. */
-async function uploadImage(article, blob){
-  if (!ME || !blob) return null;
-  const ext = (blob.type && blob.type.includes('png')) ? 'png' : 'jpg';
-  const path = `${String(article).replace(/[^\w.\-]/g,'_')}.${ext}`;
-  try{
-    const { error } = await sb.storage.from('productimg')
-      .upload(path, blob, { upsert: true, contentType: blob.type || 'image/jpeg' });
-    if (error && !/exists/i.test(error.message)) return null;
-    const { data } = sb.storage.from('productimg').getPublicUrl(path);
-    return data ? data.publicUrl : null;
-  }catch(e){ return null; }
-}
-
-async function loadCatalog(catalogId){
-  if (window.__ROLE === 'admin' || window.__ROLE === 'buyer'){
-    const out = [];
-    for (let from = 0; from < 20000; from += 1000){
-      const { data, error } = await sb.from('products').select('*')
-        .eq('catalog_id', catalogId).order('id').range(from, from + 999);
-      if (error){ console.warn('catalog', error.message); break; }
-      out.push(...(data || []));
-      if (!data || data.length < 1000) break;
-    }
-    return out;
-  }
-  const { data, error } = await sb.rpc('list_catalog', { p_catalog: catalogId });
-  if (error){ console.warn('catalog rpc', error.message); return []; }
-  return data || [];
-}
-
-async function deleteCatalog(catalogId){
-  const { data, error } = await sb.rpc('delete_catalog', { p_catalog: catalogId });
-  if (error){ console.warn('del', error.message); return -1; }
-  logAction('delete_catalog', { catalog: catalogId });
-  return data;
+    return { ok:true };
+  }catch(e){ return { ok:false, err:e.message }; }
 }
 
 async function listCatalogs(){
