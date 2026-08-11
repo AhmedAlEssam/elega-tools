@@ -162,6 +162,8 @@ async function start(){
   window.__files = listFiles;
   window.__loadSeason = loadSeason;
   window.__setSeason = setSeason;
+  window.__getSetting = getSetting;
+  window.__setSetting = setSetting;
   window.__import = importProducts;
   window.__search = searchProducts;
   window.__facets = loadFacets;
@@ -411,6 +413,19 @@ async function admLoad(tab){
 }
 
 /* ── قاعدة بيانات المنتجات: استيراد · بحث · مواسم ────────── */
+/* ── الإعدادات المشتركة (معامل التحويل) ──────────────────── */
+async function getSetting(key){
+  const { data } = await sb.from('settings').select('value').eq('key', key).maybeSingle();
+  return data ? data.value : '';
+}
+async function setSetting(key, value){
+  const { error } = await sb.from('settings')
+    .upsert({ key, value, updated_by: ME ? ME.id : null, updated_at: new Date().toISOString() },
+            { onConflict: 'key' });
+  if (!error) logAction('setting', { key, value });
+  return !error;
+}
+
 async function listFiles(){
   const { data, error } = await sb.from('files')
     .select('file_name,uploaded_at,size_bytes,user_id')
@@ -474,10 +489,11 @@ async function importProducts(meta, rows){
     catalog_id: cat.id, season: (meta.season || r.season || '')
   }));
   let done = 0;
-  for (let i = 0; i < payload.length; i += 400){
-    const chunk = payload.slice(i, i + 400);
-    const { error } = await sb.from('products')
-      .upsert(chunk, { onConflict: 'article,season' });
+  for (let i = 0; i < payload.length; i += 300){
+    const chunk = payload.slice(i, i + 300);
+    /* دمج لا استبدال: القيمة الجديدة تُكتب فقط إن لم تكن الحالية موجودة،
+       عدا الأسعار والصورة فتُحدَّث دائماً من أحدث ملفّ */
+    const { error } = await sb.rpc('merge_products', { rows: chunk });
     if (error) return { error: error.message, done };
     done += chunk.length;
     if (window.__importProgress) window.__importProgress(done, payload.length);
