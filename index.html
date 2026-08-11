@@ -160,6 +160,7 @@ async function start(){
   window.__loadNotes = loadNotes;
   window.__catalogs = listCatalogs;
   window.__files = listFiles;
+  window.__loadSeason = loadSeason;
   window.__setSeason = setSeason;
   window.__import = importProducts;
   window.__search = searchProducts;
@@ -216,16 +217,26 @@ async function logAction(action, detail){
 }
 
 async function archiveFile(file){
-  if (!ME || !file) return;
+  if (!ME || !file) return { error: 'لا جلسة' };
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const safe  = file.name.replace(/[^\w.\-]/g, '_');
+  const path  = `${ME.id}/${stamp}__${safe}`;
+  let upErr = null;
   try{
-    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const path = `${ME.id}/${stamp}__${file.name.replace(/[^\w.\-]/g, '_')}`;
-    const { error } = await sb.storage.from('catalogs').upload(path, file, { upsert: false });
-    if (error) return;
-    await sb.from('files').insert({
-      user_id: ME.id, file_name: file.name, storage_path: path, size_bytes: file.size
+    const { error } = await sb.storage.from('catalogs').upload(path, file, { upsert: true });
+    if (error) upErr = error.message;
+  }catch(e){ upErr = e.message; }
+
+  /* السجلّ يُكتب حتى لو تعثّر رفع النسخة، فلا يضيع أثر الملفّ */
+  try{
+    const { error } = await sb.from('files').insert({
+      user_id: ME.id, file_name: file.name,
+      storage_path: upErr ? '' : path, size_bytes: file.size,
+      note: upErr ? ('تعذّر حفظ النسخة: ' + upErr) : null
     });
-  }catch(e){}
+    if (error) return { error: error.message };
+  }catch(e){ return { error: e.message }; }
+  return { ok: true, warn: upErr };
 }
 
 /* ── الملاحظات المشتركة على الأصناف ───────────────────────── */
@@ -399,8 +410,19 @@ async function admLoad(tab){
 
 /* ── قاعدة بيانات المنتجات: استيراد · بحث · مواسم ────────── */
 async function listFiles(){
-  const { data } = await sb.from('files').select('file_name,uploaded_at')
-    .order('uploaded_at', { ascending:false }).limit(300);
+  const { data, error } = await sb.from('files')
+    .select('file_name,uploaded_at,size_bytes,user_id')
+    .order('uploaded_at', { ascending:false }).limit(400);
+  if (error) console.warn('files', error.message);
+  return data || [];
+}
+
+/* تحميل منتجات موسم من القاعدة — بلا إعادة رفع الملفّ */
+async function loadSeason(season){
+  const fn = window.__ROLE === 'viewer' ? 'products_public' : 'products';
+  const { data, error } = await sb.from(fn).select('*')
+    .eq('season', season).order('label').limit(2000);
+  if (error){ console.warn('season', error.message); return []; }
   return data || [];
 }
 
