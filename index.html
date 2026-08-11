@@ -244,8 +244,10 @@ async function saveNote(rec){
   if (!ME) return null;
   try{
     const row = {
-      article: rec.article, catalog: rec.catalog || '',
+      article: rec.article,
+      catalog: rec.catalog || '',
       in_stock: rec.in_stock === undefined ? null : rec.in_stock,
+      qty: rec.qty ?? null,
       checked_price: rec.checked_price ?? null,
       note: rec.note ?? null,
       user_id: ME.id
@@ -419,10 +421,15 @@ async function listFiles(){
 
 /* تحميل منتجات موسم من القاعدة — بلا إعادة رفع الملفّ */
 async function loadSeason(season){
-  const fn = window.__ROLE === 'viewer' ? 'products_public' : 'products';
-  const { data, error } = await sb.from(fn).select('*')
-    .eq('season', season).order('label').limit(2000);
-  if (error){ console.warn('season', error.message); return []; }
+  /* المشتريات والإدارة يقرأون الجدول بأسعاره · المبيعات عبر دالّة بلا أسعار */
+  if (window.__ROLE === 'admin' || window.__ROLE === 'buyer'){
+    const { data, error } = await sb.from('products').select('*')
+      .eq('season', season).order('label').limit(5000);
+    if (!error) return data || [];
+    console.warn('season', error.message);
+  }
+  const { data, error } = await sb.rpc('list_products', { p_season: season });
+  if (error){ console.warn('season rpc', error.message); return []; }
   return data || [];
 }
 
@@ -457,14 +464,14 @@ async function importProducts(meta, rows){
              category, gender, image_link, cost, price, currency, fabric, origin}] */
   if (!ME) return { error: 'لا جلسة' };
   const { data: cat, error: e1 } = await sb.from('catalogs').upsert({
-    file_name: meta.file_name, sheet_name: meta.sheet_name || '',
+    file_name: meta.file_name, sheet_name: (meta.sheet_name || ''),
     season: meta.season || '', brand: meta.brand || '', division: meta.division || '',
     row_count: rows.length, uploaded_by: ME.id
   }, { onConflict: 'file_name,sheet_name' }).select().single();
   if (e1) return { error: e1.message };
 
   const payload = rows.map(r => Object.assign({}, r, {
-    catalog_id: cat.id, season: meta.season || r.season || ''
+    catalog_id: cat.id, season: (meta.season || r.season || '')
   }));
   let done = 0;
   for (let i = 0; i < payload.length; i += 400){
@@ -489,7 +496,7 @@ async function searchProducts(opts){
 }
 
 async function loadFacets(){
-  const { data } = await sb.from('product_facets').select('*');
+  const { data } = await sb.rpc('product_facets');
   const out = { label: [], category: [], season: [], gender: [] };
   (data || []).forEach(r => { if (out[r.kind]) out[r.kind].push([r.value, r.n]); });
   Object.keys(out).forEach(k => out[k].sort((a,b) => b[1] - a[1]));
