@@ -156,20 +156,6 @@ async function start(){
   window.__ROLE = PROFILE.role;
   window.__log = logAction;
   window.__archive = archiveFile;
-  window.__saveNote = saveNote;
-  window.__loadNotes = loadNotes;
-  window.__catalogs = listCatalogs;
-  window.__files = listFiles;
-  window.__loadSeason = loadSeason;
-  window.__loadCatalog = loadCatalog;
-  window.__delCatalog = deleteCatalog;
-  window.__uploadImage = uploadImage;
-  window.__setSeason = setSeason;
-  window.__getSetting = getSetting;
-  window.__setSetting = setSetting;
-  window.__import = importProducts;
-  window.__search = searchProducts;
-  window.__facets = loadFacets;
   window.__canImport = (PROFILE.role === 'admin' || PROFILE.role === 'buyer');
 
   await logAction('login', { agent: navigator.userAgent.slice(0, 120) });
@@ -428,6 +414,47 @@ async function setSetting(key, value){
   return !error;
 }
 
+/* ── رفع صورة مضمَّنة إلى حاوية الصور ─────────────────────
+   ملفّات كثيرة تحمل صورها داخلها بلا عمود روابط، فلا يبقى منها شيء
+   في القاعدة. تُرفع هنا مرّة ويُخزَّن رابطها الثابت مع الصنف. */
+async function uploadImage(article, blob){
+  if (!ME || !blob) return null;
+  const ext = (blob.type && blob.type.includes('png')) ? 'png' : 'jpg';
+  const path = String(article).replace(/[^\w.\-]/g,'_') + '.' + ext;
+  try{
+    const { error } = await sb.storage.from('productimg')
+      .upload(path, blob, { upsert: true, contentType: blob.type || 'image/jpeg' });
+    if (error && !/exists/i.test(error.message)) return null;
+    const { data } = sb.storage.from('productimg').getPublicUrl(path);
+    return data ? data.publicUrl : null;
+  }catch(e){ return null; }
+}
+
+/* قراءة منتجات ملفّ بعينه — لا كل ما يشاركه اسم الموسم */
+async function loadCatalog(catalogId){
+  if (window.__ROLE === 'admin' || window.__ROLE === 'buyer'){
+    const out = [];
+    for (let from = 0; from < 20000; from += 1000){
+      const { data, error } = await sb.from('products').select('*')
+        .eq('catalog_id', catalogId).order('id').range(from, from + 999);
+      if (error){ console.warn('catalog', error.message); break; }
+      out.push(...(data || []));
+      if (!data || data.length < 1000) break;
+    }
+    if (out.length) return out;
+  }
+  const { data, error } = await sb.rpc('list_catalog', { p_catalog: catalogId });
+  if (error){ console.warn('catalog rpc', error.message); return []; }
+  return data || [];
+}
+
+async function deleteCatalog(catalogId){
+  const { data, error } = await sb.rpc('delete_catalog', { p_catalog: catalogId });
+  if (error){ console.warn('del', error.message); return -1; }
+  logAction('delete_catalog', { catalog: catalogId });
+  return data;
+}
+
 async function listFiles(){
   const { data, error } = await sb.from('files')
     .select('file_name,uploaded_at,size_bytes,user_id')
@@ -591,6 +618,32 @@ function toggleLang(){
   relabelDOM(document.body);
   if (window.__relabel) window.__relabel(LANG);
 }
+
+
+/* ── ربط الدوالّ بالنافذة — بعد تعريفها كلّها ───────────────
+   الترتيب مقصود: الإسناد داخل start كان يقع قبل التعريف فيسقط. */
+(function guard(){
+  const need = ['listCatalogs','listFiles','loadCatalog','deleteCatalog','uploadImage',
+    'loadSeason','setSeason','getSetting','setSetting','importProducts','searchProducts',
+    'loadFacets','saveNote','loadNotes'];
+  const miss = need.filter(n => typeof eval(n) !== 'function');
+  if (miss.length) console.error('دوالّ غير معرَّفة:', miss.join(', '));
+})();
+/* ── ربط الدوالّ بالنافذة — بعد تعريفها كلّها ─────────────── */
+window.__catalogs    = listCatalogs;
+window.__files       = listFiles;
+window.__loadSeason  = loadSeason;
+window.__loadCatalog = loadCatalog;
+window.__delCatalog  = deleteCatalog;
+window.__uploadImage = uploadImage;
+window.__setSeason   = setSeason;
+window.__getSetting  = getSetting;
+window.__setSetting  = setSetting;
+window.__import      = importProducts;
+window.__search      = searchProducts;
+window.__facets      = loadFacets;
+window.__saveNote    = saveNote;
+window.__loadNotes   = loadNotes;
 
 /* استئناف جلسة قائمة */
 sb.auth.getSession().then(({ data }) => { if (data.session) start(); });
