@@ -78,6 +78,7 @@ label{display:block;font-size:12px;color:var(--mut);font-weight:600;margin:12px 
 <div id="bar">
   <div class="me"><b id="who"></b><span id="role"></span></div>
   <span class="tag" id="langBtn" onclick="toggleLang()">EN</span>
+  <span class="tag" id="verTag" title="إصدار الأدوات المحمَّل">—</span>
   <span class="sp"></span>
   <button onclick="openAdmin()" id="adminBtn" hidden>لوحة الإدارة</button>
   <button onclick="newFile()" id="btnNew" hidden>↺ ملف آخر</button>
@@ -161,15 +162,29 @@ async function start(){
   await logAction('login', { agent: navigator.userAgent.slice(0, 120) });
 
   /* الشيفرة تُنزَّل بجلسة المستخدم — لا تصل إليها محرّكات البحث */
-  const { data, error } = await sb.storage.from('appcode').download('app.html');
-  if (error){ $('load').textContent = 'تعذّر تحميل الأدوات. يُراجَع قسم تكنولوجيا المعلومات.'; return; }
-  const html = await data.text();
+  /* التنزيل بلا تخزين مؤقّت — وإلا بقيت نسخة قديمة في المتصفّح */
+  let html = '';
+  try{
+    const { data: signed } = await sb.storage.from('appcode')
+      .createSignedUrl('app.html', 120, { download: false });
+    if (signed && signed.signedUrl){
+      const r = await fetch(signed.signedUrl + '&_=' + Date.now(), { cache: 'no-store' });
+      html = await r.text();
+    }
+  }catch(e){}
+  if (!html){
+    const { data, error } = await sb.storage.from('appcode').download('app.html');
+    if (error){ $('load').textContent = 'تعذّر تحميل الأدوات. يُراجَع قسم تكنولوجيا المعلومات.'; return; }
+    html = await data.text();
+  }
   injectApp(html);
   $('load').classList.remove('on');
   $('app').classList.add('on');
   /* لوحة المواسم تظهر فور الدخول، وحقول الاستيراد لمن يملك الصلاحية */
   setTimeout(() => {
     try{
+      const vt = document.getElementById('verTag');
+      if (vt) vt.textContent = window.__APPVER || 'قديم';
       if (window.initDB) window.initDB();
       const im = document.getElementById('imrow');
       if (im && !window.__canImport) im.style.display = 'none';
@@ -528,13 +543,22 @@ async function importProducts(meta, rows){
     const chunk = payload.slice(i, i + 300);
     /* دمج لا استبدال: القيمة الجديدة تُكتب فقط إن لم تكن الحالية موجودة،
        عدا الأسعار والصورة فتُحدَّث دائماً من أحدث ملفّ */
-    const { error } = await sb.rpc('merge_products', { rows: chunk });
+    const { data: n, error } = await sb.rpc('merge_products', { rows: chunk });
     if (error) return { error: error.message, done };
-    done += chunk.length;
+    /* العدد من الخادم — لا من عدد ما أُرسل */
+    done += (typeof n === 'number') ? n : chunk.length;
     if (window.__importProgress) window.__importProgress(done, payload.length);
   }
-  logAction('import', { file: meta.file_name, rows: done, season: meta.season });
-  return { done, catalog: cat };
+  /* التحقّق النهائي من القاعدة نفسها */
+  let stored = null;
+  try{
+    const { count } = await sb.from('products')
+      .select('id', { count: 'exact', head: true }).eq('catalog_id', cat.id);
+    stored = count;
+    if (stored != null) await sb.from('catalogs').update({ row_count: stored }).eq('id', cat.id);
+  }catch(e){}
+  logAction('import', { file: meta.file_name, sent: payload.length, done, stored, season: meta.season });
+  return { done, stored, sent: payload.length, catalog: cat };
 }
 
 async function searchProducts(opts){
