@@ -132,9 +132,12 @@ async function signOut(){
 }
 
 /* ── بعد التحقّق: تحميل التطبيق من حاوية خاصة ──────────────── */
+let STARTING = false;
 async function start(){
+  if (STARTING) return;
+  STARTING = true;
   const { data: { user } } = await sb.auth.getUser();
-  if (!user) return;
+  if (!user){ STARTING = false; return; }
   ME = user;
 
   const { data: prof } = await sb.from('profiles').select('*').eq('id', user.id).single();
@@ -194,7 +197,12 @@ async function start(){
 }
 
 /* الحقن: الأنماط ثم البنية ثم تشغيل السكربتات */
+let APP_INJECTED = false;
 function injectApp(html){
+  /* start() قد تُستدعى مرّتين — من استئناف الجلسة ومن الدخول —
+     فحقن الشيفرة مرّتين يُنتج «PAL has already been declared» ويوقف كل شيء */
+  if (APP_INJECTED) return;
+  APP_INJECTED = true;
   const doc = new DOMParser().parseFromString(html, 'text/html');
   doc.querySelectorAll('style').forEach(st => {
     const s = document.createElement('style'); s.textContent = st.textContent;
