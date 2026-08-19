@@ -564,7 +564,8 @@ async function importProducts(meta, rows){
 async function searchProducts(opts){
   const { data, error } = await sb.rpc('search_products', {
     q: opts.q || null, p_label: opts.label || null, p_category: opts.category || null,
-    p_season: opts.season || null, p_size: opts.size || null, lim: opts.limit || 300
+    p_season: opts.season || null, p_size: opts.size || null,
+    p_color: opts.color || null, lim: opts.limit || 300
   });
   if (error){ console.warn('search', error.message); return []; }
   return data || [];
@@ -572,7 +573,7 @@ async function searchProducts(opts){
 
 async function loadFacets(){
   const { data } = await sb.rpc('product_facets');
-  const out = { label: [], category: [], season: [], gender: [] };
+  const out = { label: [], category: [], season: [], gender: [], color: [], size: [] };
   (data || []).forEach(r => { if (out[r.kind]) out[r.kind].push([r.value, r.n]); });
   Object.keys(out).forEach(k => out[k].sort((a,b) => b[1] - a[1]));
   return out;
